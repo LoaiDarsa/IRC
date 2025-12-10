@@ -16,8 +16,8 @@ std::string Client::extractLine()
     std::string line = buffer.substr(0, pos);
     buffer.erase(0, pos + 1);
 
-    if (!line.empty() && line.back() == '\r')
-        line.pop_back();
+    if (!line.empty() && line[line.size() - 1] == '\r')
+        line.erase(line.size() - 1);
 
     return line;
 }

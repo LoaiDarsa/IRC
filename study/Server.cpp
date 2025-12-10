@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <cctype>
+#include <utility>
 #include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -65,7 +66,7 @@ void Server::handleNewConnection()
 	fcntl(clientFd, F_SETFL, O_NONBLOCK);
 
 	std::cout << "[NEW CLIENT] fd=" << clientFd << std::endl;
-	clients[clientFd] = Client(clientFd);
+	clients.insert(std::make_pair(clientFd, Client(clientFd)));
 
 	struct pollfd newPoll;
     newPoll.fd = clientFd;
@@ -114,6 +115,11 @@ void Server::run()
 //index hwwe l fd of the client
 void Server::handleClientData(int fd)
 {
+    std::map<int, Client>::iterator it = clients.find(fd);
+    if (it == clients.end()) {
+        return;
+    }
+
 	char buf[512];
 	//reads data from client into the buffer. TCP equivalent of read()
 	int bytes = recv(fd, buf, sizeof(buf) - 1, 0);
@@ -126,12 +132,12 @@ void Server::handleClientData(int fd)
 	//TCP does NOT add a null terminator (\0), but a C-string must end with \0.
 	buf[bytes] = '\0';
     //append to the client's buffer
-	clients[fd].appendToBuffer(std::string(buf));
+	it->second.appendToBuffer(std::string(buf));
 	std::string line;
-	while (!(line = clients[fd].extractLine()).empty())
+	while (!(line = it->second.extractLine()).empty())
 	{
 		std::cout << "[RECV from " << fd << "] " << line << std::endl;
-        handleCommand(clients[fd], line);
+        handleCommand(it->second, line);
 	}
 }
 
