@@ -6,6 +6,7 @@
 #include <map>
 #include <poll.h>
 #include "Client.hpp"
+#include "Channel.hpp"
 
 class Server {
 private:
@@ -15,6 +16,7 @@ private:
 
     std::vector<struct pollfd> pollfds;
     std::map<int, Client> clients;
+    std::map<std::string, Channel> channels;
 
 public:
     Server(int port, const std::string &password);
@@ -36,6 +38,7 @@ private:
     void handlePass(Client &client, const std::string &line);
     void handleNick(Client &client, const std::string &line);
     void handleUser(Client &client, const std::string &line);
+    void handleJoin(Client &client, const std::string &line);
 
     // Welcome message after full registration
     void sendWelcome(Client &client);

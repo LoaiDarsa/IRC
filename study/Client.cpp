@@ -36,6 +36,11 @@ void Client::setUsername(const std::string &u) { username = u; }
 std::string Client::getNickname() const { return nickname; }
 std::string Client::getUsername() const { return username; }
 
+bool Client::operator<(const Client &other) const
+{
+    return fd < other.fd;
+}
+
 bool Client::isReady() const
 {
     return passGiven && nickGiven && userGiven && !registered;

@@ -38,6 +38,8 @@ public:
     std::string getNickname() const;
     std::string getUsername() const;
 
+    bool operator<(const Client &other) const;
+
     bool isReady() const;
 
     void setRegistered(bool v);

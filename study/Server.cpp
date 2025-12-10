@@ -160,6 +160,9 @@ void Server::handleCommand(Client &client, const std::string &line)
     else if (cmd == "USER")
         handleUser(client, line);
 
+    else if (cmd == "JOIN")
+        handleJoin(client, line);
+
     else if (!client.isRegistered())
     {
         // client not ready
@@ -301,4 +304,94 @@ void Server::sendWelcome(Client &client)
 
     std::string msg2 = ":localhost 002 " + nick + " :Your host is localhost\r\n";
     send(client.getFd(), msg2.c_str(), msg2.size(), 0);
+}
+
+void Server::handleJoin(Client &client, const std::string &line)
+{
+    //Extract channel name
+    std::stringstream ss(line);
+    std::string cmd, channelName;
+    //cmd="JOIN" channelName="#chat"
+    ss >> cmd >> channelName;
+
+    if (channelName.empty())
+    {
+        std::string msg = ":localhost 461 JOIN :Not enough parameters\r\n";
+        send(client.getFd(), msg.c_str(), msg.size(), 0);
+        return;
+    }
+
+    //removes leading #
+    if (channelName[0] == '#')
+        channelName = channelName.substr(1);
+
+    // Create channel if it doesn't exist
+    std::map<std::string, Channel>::iterator channelIt = channels.find(channelName);
+    if (channelIt == channels.end())
+    {
+        std::pair<std::map<std::string, Channel>::iterator, bool> res =
+            channels.insert(std::make_pair(channelName, Channel(channelName)));
+        channelIt = res.first;
+        std::cout << "[CHANNEL] Created #" << channelName << std::endl;
+    }
+
+    Channel &channel = channelIt->second;
+
+    // Already in channel?
+    if (channel.hasMember(client))
+    {
+        std::string msg = ":localhost 443 " + client.getNickname() +
+                          " #" + channelName + " :You're already in the channel\r\n";
+        send(client.getFd(), msg.c_str(), msg.size(), 0);
+        return;
+    }
+
+    //Add client as member
+    channel.addMember(client);
+
+    // If first user → make operator
+    if (channel.getMembers().size() == 1)
+        channel.addOperator(client);
+
+    std::string joinMsg = ":" + client.getNickname() + " JOIN #" + channelName + "\r\n";
+
+    //broadcast the join message to everyone in the channel
+    for (std::set<Client>::iterator it = channel.getMembers().begin();
+         it != channel.getMembers().end(); ++it)
+    {
+        send((it)->getFd(), joinMsg.c_str(), joinMsg.size(), 0);
+    }
+
+    // Send topic or "no topic"
+    if (channel.getTopic().empty())
+    {
+        std::string noTopic = ":localhost 331 " + client.getNickname() +
+                              " #" + channelName + " :No topic is set\r\n";
+        send(client.getFd(), noTopic.c_str(), noTopic.size(), 0);
+    }
+    else
+    {
+        std::string topic = ":localhost 332 " + client.getNickname() +
+                            " #" + channelName + " :" + channel.getTopic() + "\r\n";
+        send(client.getFd(), topic.c_str(), topic.size(), 0);
+    }
+
+    // Send NAMES list (353 + 366)
+    std::string names = "";
+    for (std::set<Client>::iterator it = channel.getMembers().begin();
+         it != channel.getMembers().end(); ++it)
+    {
+        if (channel.isOperator(*it))
+            names += "@" + (it)->getNickname() + " ";
+        else
+            names += (it)->getNickname() + " ";
+    }
+
+    std::string namesReply = ":localhost 353 " + client.getNickname() +
+                             " = #" + channelName + " :" + names + "\r\n";
+    send(client.getFd(), namesReply.c_str(), namesReply.size(), 0);
+
+    std::string endNames = ":localhost 366 " + client.getNickname() +
+                           " #" + channelName + " :End of NAMES list\r\n";
+    send(client.getFd(), endNames.c_str(), endNames.size(), 0);
 }
