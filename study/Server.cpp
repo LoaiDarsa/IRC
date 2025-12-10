@@ -26,19 +26,23 @@ void Server::setUpSocket() {
 	if (serverFd < 0)
 		throw std::runtime_error("socket() failed");
 
+    //without this,when restarting the server will give me port already in use
 	int yes = 1;
 	if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0)
 		throw std::runtime_error("setsockopt() failed");
 
+    //creating an addr where the server will live
 	sockaddr_in addr;
 	std::memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(port);
+	addr.sin_family = AF_INET; //IPv4
+	addr.sin_addr.s_addr = INADDR_ANY; //any IP 3ndo yeha l machine
+	addr.sin_port = htons(port); //port in network format
 
+    //binding the server add to the socket
 	if (bind(serverFd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0)
 		throw std::runtime_error("bind() failed");
 
+    //making the socket to listen for events on this port
 	if (listen(serverFd, SOMAXCONN) < 0)
 		throw std::runtime_error("listen() failed");
 }
@@ -57,6 +61,7 @@ void Server::handleNewConnection()
 	//recv(fd) will freeze your entire program if no data is available
 	// send(fd) will freeze if the output buffer is full
 	//O_NONBLOCK means do not block
+    //baleha recv would freeze my program
 	fcntl(clientFd, F_SETFL, O_NONBLOCK);
 
 	std::cout << "[NEW CLIENT] fd=" << clientFd << std::endl;
@@ -83,6 +88,7 @@ void Server::run()
 	while(true)
 	{
 		//waits for an event to occur
+        //this blocks until new client connects, client sends data, client disconnects
 		int ret = poll(&pollfds[0], pollfds.size(), -1);
 
 		if (ret < 0)
@@ -93,6 +99,7 @@ void Server::run()
 
 		for(size_t i = 0;i < pollfds.size(); i++)
 		{
+            //hay ma3neta this socket has data to read
 			if (pollfds[i].revents & POLLIN)
 			{
 				if (pollfds[i].fd == serverFd)
@@ -118,6 +125,7 @@ void Server::handleClientData(int fd)
 	}
 	//TCP does NOT add a null terminator (\0), but a C-string must end with \0.
 	buf[bytes] = '\0';
+    //append to the client's buffer
 	clients[fd].appendToBuffer(std::string(buf));
 	std::string line;
 	while (!(line = clients[fd].extractLine()).empty())
@@ -172,6 +180,11 @@ void Server::removeClient(int fd)
     }
 }
 
+//checks:
+//Did the client already send PASS?
+//Did they include a password?
+//Is the password correct?
+//if wrong->disconnenct
 void Server::handlePass(Client &client, const std::string &line)
 {
     if (client.isPassGiven())
@@ -202,7 +215,13 @@ void Server::handlePass(Client &client, const std::string &line)
 
     client.setPassGiven(true);
 }
+/* Checks:
 
+Did user provide a nickname?
+
+Is nickname unique?
+
+Then sets nickname.*/
 void Server::handleNick(Client &client, const std::string &line)
 {
     std::stringstream ss(line);
@@ -234,6 +253,10 @@ void Server::handleNick(Client &client, const std::string &line)
         sendWelcome(client);
 }
 
+
+/*Did user provide username?
+
+Did user already send USER?*/
 void Server::handleUser(Client &client, const std::string &line)
 {
     if (client.isUserGiven())
