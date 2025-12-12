@@ -39,6 +39,7 @@ private:
     void handleNick(Client &client, const std::string &line);
     void handleUser(Client &client, const std::string &line);
     void handleJoin(Client &client, const std::string &line);
+    void handlePart(Client &client, const std::string &line);
 
     // Welcome message after full registration
     void sendWelcome(Client &client);

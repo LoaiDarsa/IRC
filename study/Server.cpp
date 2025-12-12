@@ -163,6 +163,12 @@ void Server::handleCommand(Client &client, const std::string &line)
     else if (cmd == "JOIN")
         handleJoin(client, line);
 
+    else if (cmd == "PART")
+        handleJoin(client, line);
+
+    else if (cmd == "PRIVMSG")
+        handleJoin(client, line);
+
     else if (!client.isRegistered())
     {
         // client not ready
@@ -394,4 +400,74 @@ void Server::handleJoin(Client &client, const std::string &line)
     std::string endNames = ":localhost 366 " + client.getNickname() +
                            " #" + channelName + " :End of NAMES list\r\n";
     send(client.getFd(), endNames.c_str(), endNames.size(), 0);
+}
+
+void Server::handlePart(Client &client, const std::string& line)
+{
+    std::stringstream ss(line);
+    std::string cmd, channelName;
+    ss >> cmd >> channelName;
+
+    if (channelName.empty())
+    {
+        std::string msg = ":localhost 461 PART :Not enough parameters\r\n";
+        send(client.getFd(), msg.c_str(), msg.size(), 0);
+        return; 
+    }
+
+    // Normalize name: strip leading '#'
+    if (!channelName.empty() && channelName[0] == '#')
+        channelName = channelName.substr(1);
+
+    std::map<std::string, Channel>::iterator chanIt = channels.find(channelName);
+    if (chanIt == channels.end())
+    {
+        std::string msg = ":localhost 403 " + client.getNickname() + " #" +
+                          channelName + " :No such channel\r\n";
+        send(client.getFd(), msg.c_str(), msg.size(), 0);
+        return;
+    }
+
+    Channel &channel = chanIt->second;
+
+    if (!channel.hasMember(client))
+    {
+        std::string msg = ":localhost 442 " + client.getNickname() + " #" +
+                          channelName + " :You're not on that channel\r\n";
+        send(client.getFd(), msg.c_str(), msg.size(), 0);
+        return;
+    }
+
+    std::string partMsg = ":" + client.getNickname() + " PART #" + channelName + "\r\n";
+
+    for (std::set<Client>::iterator it = channel.getMembers().begin();
+         it != channel.getMembers().end(); ++it)
+    {
+        send((it)->getFd(), partMsg.c_str(), partMsg.size(), 0);
+    }
+
+    const bool wasOperator = channel.isOperator(client);
+    channel.removeMember(client);
+    channel.removeOperator(client);
+
+    if (!channel.getMembers().empty() && wasOperator)
+    {
+        Client newOp = *(channel.getMembers().begin());
+        channel.addOperator(newOp);
+
+        std::string modeMsg = ":localhost MODE #" + channelName +
+                              " +o " + newOp.getNickname() + "\r\n";
+
+        for (std::set<Client>::iterator it = channel.getMembers().begin();
+             it != channel.getMembers().end(); ++it)
+        {
+            send((it)->getFd(), modeMsg.c_str(), modeMsg.size(), 0);
+        }
+    }
+
+    if (channel.empty())
+    {
+        channels.erase(channelName);
+        std::cout << "[CHANNEL] Deleted #" << channelName << std::endl;
+    }
 }
