@@ -181,6 +181,49 @@ void Server::handleCommand(Client &client, const std::string &line)
 
 void Server::removeClient(int fd)
 {
+    std::map<int, Client>::iterator clientIt = clients.find(fd);
+    if (clientIt != clients.end())
+    {
+        Client *clientPtr = &clientIt->second;
+
+        for (std::map<std::string, Channel>::iterator chanIt = channels.begin();
+             chanIt != channels.end(); )
+        {
+            Channel &channel = chanIt->second;
+            const bool wasMember = channel.hasMember(*clientPtr);
+            const bool wasOperator = wasMember && channel.isOperator(*clientPtr);
+
+            if (wasMember)
+            {
+                channel.removeMember(*clientPtr);
+                channel.removeOperator(*clientPtr);
+
+                if (wasOperator && !channel.getMembers().empty())
+                {
+                    Client *newOp = *channel.getMembers().begin();
+                    channel.addOperator(*newOp);
+
+                    std::string modeMsg = ":localhost MODE #" + channel.getName() +
+                                          " +o " + newOp->getNickname() + "\r\n";
+
+                    for (std::set<Client*, ClientPtrLess>::iterator it = channel.getMembers().begin();
+                         it != channel.getMembers().end(); ++it)
+                    {
+                        send((*it)->getFd(), modeMsg.c_str(), modeMsg.size(), 0);
+                    }
+                }
+
+                if (channel.empty())
+                {
+                    std::cout << "[CHANNEL] Deleted #" << channel.getName() << std::endl;
+                    channels.erase(chanIt++);
+                    continue;
+                }
+            }
+            ++chanIt;
+        }
+    }
+
     std::cout << "[DISCONNECT] fd=" << fd << std::endl;
     close(fd);
     clients.erase(fd);
@@ -362,10 +405,10 @@ void Server::handleJoin(Client &client, const std::string &line)
     std::string joinMsg = ":" + client.getNickname() + " JOIN #" + channelName + "\r\n";
 
     //broadcast the join message to everyone in the channel
-    for (std::set<Client>::iterator it = channel.getMembers().begin();
+    for (std::set<Client*, ClientPtrLess>::iterator it = channel.getMembers().begin();
          it != channel.getMembers().end(); ++it)
     {
-        send((it)->getFd(), joinMsg.c_str(), joinMsg.size(), 0);
+        send((*it)->getFd(), joinMsg.c_str(), joinMsg.size(), 0);
     }
 
     // Send topic or "no topic"
@@ -384,13 +427,13 @@ void Server::handleJoin(Client &client, const std::string &line)
 
     // Send NAMES list (353 + 366)
     std::string names = "";
-    for (std::set<Client>::iterator it = channel.getMembers().begin();
+    for (std::set<Client*, ClientPtrLess>::iterator it = channel.getMembers().begin();
          it != channel.getMembers().end(); ++it)
     {
-        if (channel.isOperator(*it))
-            names += "@" + (it)->getNickname() + " ";
+        if (channel.isOperator(**it))
+            names += "@" + (*it)->getNickname() + " ";
         else
-            names += (it)->getNickname() + " ";
+            names += (*it)->getNickname() + " ";
     }
 
     std::string namesReply = ":localhost 353 " + client.getNickname() +
@@ -440,10 +483,10 @@ void Server::handlePart(Client &client, const std::string& line)
 
     std::string partMsg = ":" + client.getNickname() + " PART #" + channelName + "\r\n";
 
-    for (std::set<Client>::iterator it = channel.getMembers().begin();
+    for (std::set<Client*, ClientPtrLess>::iterator it = channel.getMembers().begin();
          it != channel.getMembers().end(); ++it)
     {
-        send((it)->getFd(), partMsg.c_str(), partMsg.size(), 0);
+        send((*it)->getFd(), partMsg.c_str(), partMsg.size(), 0);
     }
 
     const bool wasOperator = channel.isOperator(client);
@@ -452,16 +495,16 @@ void Server::handlePart(Client &client, const std::string& line)
 
     if (!channel.getMembers().empty() && wasOperator)
     {
-        Client newOp = *(channel.getMembers().begin());
-        channel.addOperator(newOp);
+        Client *newOp = *(channel.getMembers().begin());
+        channel.addOperator(*newOp);
 
         std::string modeMsg = ":localhost MODE #" + channelName +
-                              " +o " + newOp.getNickname() + "\r\n";
+                              " +o " + newOp->getNickname() + "\r\n";
 
-        for (std::set<Client>::iterator it = channel.getMembers().begin();
+        for (std::set<Client*, ClientPtrLess>::iterator it = channel.getMembers().begin();
              it != channel.getMembers().end(); ++it)
         {
-            send((it)->getFd(), modeMsg.c_str(), modeMsg.size(), 0);
+            send((*it)->getFd(), modeMsg.c_str(), modeMsg.size(), 0);
         }
     }
 
